@@ -158,7 +158,7 @@ $('chat-form').onsubmit=async e=>{
     :response.status===503
      ?'De AI-verbinding is nog niet volledig ingesteld. De beheerder moet de Gemini-sleutel veilig toevoegen in Netlify.'
      :'De AI kon nu niet antwoorden. Probeer het straks opnieuw.';
-   addMsg('bot',data.error||message);
+   addMsg('bot',data.detail||data.error||message);
    return;
   }
   const answer=String(data.reply||'Ik kon geen antwoord maken. Probeer je vraag anders te formuleren.');
