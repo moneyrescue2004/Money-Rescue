@@ -73,7 +73,13 @@ export default async (request) => {
   const prompt = `${systemInstruction}\n\nContext van deze gebruiker (alleen lokaal ingevoerde gegevens; geen kassabonfoto's):\n${JSON.stringify(safeContext)}`;
 
   try {
-    const result = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+    
+let result;
+
+for (let attempt = 0; attempt < 2; attempt++) {
+  result = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -87,7 +93,14 @@ export default async (request) => {
           maxOutputTokens: 900
         }
       })
-    });
+    }
+  );
+
+  if (result.status !== 503 || attempt === 1) break;
+
+  await new Promise(resolve => setTimeout(resolve, 2000));
+}
+
 
     if (result.status === 429) {
       return new Response(JSON.stringify({ error: "De gratis AI-gebruiksgrens is tijdelijk bereikt. Probeer later opnieuw." }), {
