@@ -109,8 +109,29 @@ const mealIdeas=[
  {name:'Rijst met groenten en ei',items:['rijst','diepvriesgroenten','eieren','sojasaus'],method:'Kook de rijst. Bak groenten en ei, voeg rijst en een beetje sojasaus toe.',type:'dinner'},
  {name:'Wraps met bonen',items:['wraps','bonen','mais','tomaat'],method:'Warm bonen en maïs op, snijd tomaat en vul de wraps.',type:'dinner'}
 ];
-$('planner-form').onsubmit=e=>{e.preventDefault();const type=$('plan-type').value, budget=Number($('plan-budget').value),people=Number($('plan-people').value),days=Number($('plan-days').value),pref=$('plan-pref').value.trim().toLowerCase();if(!budget||budget<1)return toast('Vul een geldig budget in.');s.budget=budget;save();let chosen;if(type==='list'){chosen=['havermout','bananen','brood','eieren','pasta','tomatenblokjes','aardappelen','diepvriesgroenten','appels','natuur yoghurt'].slice(0,Math.min(10,days+5));}else{let pool=mealIdeas.filter(m=>!(pref.includes('vegetar')===false&&pref.includes('geen vlees')));chosen=[];for(let d=0;d<days;d++){let breakfast=pool.filter(m=>m.type==='breakfast')[d%2],lunch=pool.filter(m=>m.type==='lunch')[0],dinner=pool.filter(m=>m.type==='dinner')[d%4];chosen.push({day:d+1,meals:[breakfast,lunch,dinner]});}}
-let ingredients=type==='list'?chosen: [...new Set(chosen.flatMap(d=>d.meals.flatMap(m=>m.items)))];let title=type==='list'?'Je basisboodschappenlijst':`Maaltijdplan voor ${days} ${days===1?'dag':'dagen'}`;let html=`<div class="plan-card"><h3>${title}</h3><p class="muted">Budget: ${euro(budget)} · ${people} ${people===1?'persoon':'personen'}. Dit is een startvoorstel, geen prijsberekening. Controleer hoeveelheden en prijzen in de winkel.</p>`;if(type==='meals'){html+=chosen.map(d=>`<div class="meal-day"><b>Dag ${d.day}</b>${d.meals.map(m=>`<p><strong>${m.type==='breakfast'?'Ontbijt':m.type==='lunch'?'Lunch':'Avondeten'}:</strong> ${esc(m.name)}<br><span class="muted">${esc(m.method)}</span></p>`).join('')}</div>`).join('');}else{html+='<p>Een eenvoudige startlijst met basisproducten.</p>';}html+=`<h3>Benodigde boodschappen</h3><ul>${ingredients.map(i=>`<li>${esc(i)}</li>`).join('')}</ul><button class="primary wide" id="add-plan-list">Voeg boodschappen toe aan mijn lijst</button></div>`;$('plan-result').innerHTML=html;$('add-plan-list').onclick=()=>{ingredients.forEach(name=>{if(!s.items.some(x=>x.name.toLowerCase()===name.toLowerCase()))s.items.push({id:s.id++,name,done:false})});save();toast('Boodschappen toegevoegd aan je lijst');tab('list')};};
+$('planner-form').onsubmit=async e=>{
+ e.preventDefault();
+ const type=$('plan-type').value,budget=Number($('plan-budget').value),people=Number($('plan-people').value),days=Number($('plan-days').value),pref=$('plan-pref').value.trim().toLowerCase();
+ const stores=[...document.querySelectorAll('#plan-stores input:checked')].map(x=>x.value);
+ if(!budget||budget<1)return toast('Vul een geldig budget in.');
+ if(!stores.length)return toast('Kies minstens één supermarkt.');
+ s.budget=budget;save();
+ let chosen;
+ if(type==='list') chosen=['havermout','bananen','brood','eieren','pasta','tomatenblokjes','aardappelen','diepvriesgroenten','appels','natuur yoghurt'].slice(0,Math.min(10,days+5));
+ else {let pool=mealIdeas.filter(m=>!(pref.includes('vegetar')===false&&pref.includes('geen vlees')));chosen=[];for(let d=0;d<days;d++){let breakfast=pool.filter(m=>m.type==='breakfast')[d%2],lunch=pool.filter(m=>m.type==='lunch')[0],dinner=pool.filter(m=>m.type==='dinner')[d%4];chosen.push({day:d+1,meals:[breakfast,lunch,dinner]});}}
+ const ingredients=type==='list'?chosen:[...new Set(chosen.flatMap(d=>d.meals.flatMap(m=>m.items)))];
+ const title=type==='list'?'Je basisboodschappenlijst':`Maaltijdplan voor ${days} ${days===1?'dag':'dagen'}`;const area=$('plan-result');
+ let out=`<div class="plan-card"><h3>${title}</h3><p class="muted">Budget: ${euro(budget)} · ${people} ${people===1?'persoon':'personen'}. Geselecteerde winkels: ${stores.map(esc).join(', ')}.</p>`;
+ if(type==='meals')out+=chosen.map(d=>`<div class="meal-day"><b>Dag ${d.day}</b>${d.meals.map(m=>`<p><strong>${m.type==='breakfast'?'Ontbijt':m.type==='lunch'?'Lunch':'Avondeten'}:</strong> ${esc(m.name)}<br><span class="muted">${esc(m.method)}</span></p>`).join('')}</div>`).join('');else out+='<p>Een eenvoudige startlijst met basisproducten.</p>';
+ out+='<h3>Goedkoopste gevonden aanbiedingen</h3><p class="muted" id="planner-status">Aanbiedingen per product ophalen…</p><div id="planner-offers"></div><h3>Benodigde boodschappen</h3><ul>'+ingredients.map(i=>`<li>${esc(i)}</li>`).join('')+'</ul><button class="primary wide" id="add-plan-list">Voeg boodschappen toe aan mijn lijst</button></div>';
+ area.innerHTML=out;
+ $('add-plan-list').onclick=()=>{ingredients.forEach(name=>{if(!s.items.some(x=>x.name.toLowerCase()===name.toLowerCase()))s.items.push({id:s.id++,name,done:false})});save();toast('Boodschappen toegevoegd aan je lijst');tab('list')};
+ const norm=v=>String(v||'').toLocaleLowerCase('nl-BE').replace(/[^a-z0-9]+/g,' ').trim();const storeSet=new Set(stores.map(norm));const results=[];
+ for(const ingredient of ingredients){try{const r=await fetch('/api/prices?q='+encodeURIComponent(ingredient),{headers:{'Accept':'application/json'}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error('');const offers=extractOfferRows(data).filter(x=>storeSet.has(norm(x.retailer))&&Number.isFinite(Number(x.price))&&Number(x.price)>0);offers.sort((a,b)=>Number(a.price)-Number(b.price));results.push({ingredient,best:offers[0]||null});}catch{results.push({ingredient,best:null});}}
+ const priced=results.filter(x=>x.best),total=priced.reduce((sum,x)=>sum+Number(x.best.price),0);
+ $('planner-status').textContent=`${priced.length} van ${ingredients.length} producten hebben een gevonden aanbieding.`;
+ $('planner-offers').innerHTML=results.map(x=>x.best?`<div class="price-row"><div><b>${esc(x.ingredient)}</b><small>Goedkoopste gevonden bij ${esc(x.best.retailer)}${x.best.quantity?' · '+esc(x.best.quantity):''}${x.best.validUntil?' · geldig t/m '+esc(x.best.validUntil):''}</small></div><strong>${money(x.best.price)}</strong></div>`:`<div class="price-row"><div><b>${esc(x.ingredient)}</b><small>Geen aanbieding gevonden bij de geselecteerde winkels</small></div><strong>Onbekend</strong></div>`).join('')+`<p class="muted"><b>Totaal van gevonden aanbiedingen: ${euro(total)}</b>. Dit telt alleen producten met een gevonden prijs; het is geen volledige winkelmandprijs. Controleer product, verpakking en actievoorwaarden.</p>`;
+};
 
 const chatHistory=[];
 function addMsg(who,text){
@@ -158,7 +179,7 @@ $('chat-form').onsubmit=async e=>{
     :response.status===503
      ?'De AI-verbinding is nog niet volledig ingesteld. De beheerder moet de Gemini-sleutel veilig toevoegen in Netlify.'
      :'De AI kon nu niet antwoorden. Probeer het straks opnieuw.';
-   addMsg('bot',data.detail||data.error||message);
+   addMsg('bot',data.error||message);
    return;
   }
   const answer=String(data.reply||'Ik kon geen antwoord maken. Probeer je vraag anders te formuleren.');
